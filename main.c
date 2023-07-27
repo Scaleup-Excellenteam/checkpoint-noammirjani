@@ -8,6 +8,7 @@
 #define NUM_LEN 15
 #define CELL_LEN 11
 #define STUDENTS_FILE "students.txt"
+#define OUTPUT_FILE "backupDB.txt"
 
 
 //------------ structs ------------//
@@ -147,17 +148,21 @@ void initDB(){
     fclose(fp);
 }
 
-void printDB(){
+void printDB(FILE* fp){
+    if(fp == NULL){
+        fp = stdout;
+    }
+
     for(int i = 0; i < NUM_LEVELS; i++){
         for(int j = 0; j < NUM_CLASSES; j++){
-            printf("Level %d, Class %d:\n", i, j);
+            fprintf(fp, "Level %d, Class %d:\n", i, j);
             Student* curr = (Student *) school.DB[i][j];
             while(curr != NULL){
-                printf("%s %s %s ", curr->fname, curr->lname, curr->cellphone);
+                fprintf(fp, "%s %s %s ", curr->fname, curr->lname, curr->cellphone);
                 for(int k = 0; k < NUM_COURSES; k++){
-                    printf("%d ", curr->courses_grades[k]);
+                    fprintf(fp, "%d ", curr->courses_grades[k]);
                 }
-                printf("\n");
+                fprintf(fp, "\n");
                 curr = (Student *) curr->next;
             }
         }
@@ -178,6 +183,15 @@ void printStudent(const Student* stud){
     printf("\n");
 }
 
+void printDBtoFile(){
+    FILE *fp = fopen(OUTPUT_FILE, "w");
+    if(fp == NULL){
+        programFailed("Error opening output file\n");
+    }
+    printDB(fp);
+    fclose(fp);
+}
+
 //------------ menu functions ------------//
 void printMenu(){
     printf("Choose task:\n");
@@ -188,7 +202,8 @@ void printMenu(){
     printf("5. Search excellent students\n");
     printf("6. Search unstable students\n");
     printf("7. Calculate level average\n");
-    printf("8. Print DB\n");
+    printf("8. Print DB to screen\n");
+    printf("9. Print DB to file\n");
     printf("0. Exit\n");
     printf("Your choice: ");
 }
@@ -291,13 +306,15 @@ void executeTask(const int task){
             printf("Calculate level average\n");
             break;
         case 8:
-            printDB();
+            printDB(NULL);
+            break;
+        case 9:
+            printDBtoFile();
             break;
         default:
             printf("Invalid task\n");
             break;
     }
-
 }
 
 void menu(){
@@ -319,7 +336,7 @@ void menu(){
 int main(){
 
     initDB();
-  //  printDB();
+  //  printDB(NULL);
     menu();
     freeSchool();
 
