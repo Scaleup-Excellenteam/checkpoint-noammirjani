@@ -18,6 +18,7 @@ typedef struct {
     int courses_grades[NUM_COURSES];
     int level, class; // for now, not sure if it will stay
     struct Student* next;
+    struct Student* prev;
 } Student;
 
 typedef struct {
@@ -48,6 +49,25 @@ void freeSchool(){
     }
 }
 
+void freeStudent(Student* stud){
+    int class = stud->class, level = stud->level;
+
+    if(stud == NULL){
+        return;
+    }
+    if(stud->prev == NULL){ // first student in class
+        school.DB[level][class] = (Student *) stud->next;
+    }
+    if(stud->next == NULL){ // last student in class
+        ((Student*) stud->prev)->next = NULL;
+    }
+    else {                 // not first student in class
+        ((Student*) stud->prev)->next = stud->next;
+        ((Student*) stud->next)->prev = stud->prev;
+    }
+    free(stud);
+}
+
 void programFailed(char* msg){
     perror(msg);
     freeSchool();
@@ -59,6 +79,7 @@ Student* allocateStudent(){
     if(stud == NULL) {
         programFailed("Error allocating memory for student\n");
     }
+    stud->next = stud->prev = NULL;
     return stud;
 }
 
@@ -77,19 +98,13 @@ void clearStdin(){
     while ((getchar()) != '\n'); // clear stdin
 }
 
-//Student* searchStudentInClass(Student* class, char* fname, char* lname){
-//
-//    Student* stud = class;
-//    while(stud != NULL || (strcmp(stud->fname, fname) == 0 && strcmp(stud->lname, lname) == 0)){
-//        stud = (Student *) stud->next;
-//    }
-//
-//    if(stud != NULL){
-//        printf("found student!!");
-//        printf("%s " , stud->cellphone);
-//    }
-//    return stud;
-//}
+Student* searchInClass(Student* class, const char fname[NUM_LEN], const char lname[NUM_LEN]){
+    Student* stud = class;
+    while(stud != NULL && (strcmp(stud->fname, fname) != 0 || strcmp(stud->lname, lname) != 0)){
+        stud = (Student *) stud->next;
+    }
+    return stud;
+}
 
 //------------ DB functions ------------//
 void parseStudentFromFileLine(char* line){
@@ -110,7 +125,11 @@ void parseStudentFromFileLine(char* line){
     }
 
     //TODO: implement sorting insertion  by names
-    stud->next = (struct Student *) school.DB[stud->level][stud->class];
+    Student * currHead = school.DB[stud->level][stud->class];
+    stud->next = (struct Student *) currHead;
+    if(currHead != NULL){
+        currHead->prev = (struct Student *) stud;
+    }
     school.DB[stud->level][stud->class] = stud;
 }
 
@@ -143,6 +162,20 @@ void printDB(){
             }
         }
     }
+}
+
+void printStudent(const Student* stud){
+    printf("Student info:\n");
+    printf("First name: %s\n", stud->fname);
+    printf("Last name: %s\n", stud->lname);
+    printf("Cellphone: %s\n", stud->cellphone);
+    printf("Level: %d\n", stud->level);
+    printf("Class: %d\n", stud->class);
+    printf("Courses grades: ");
+    for(int i = 0; i < NUM_COURSES; i++){
+        printf("%d ", stud->courses_grades[i]);
+    }
+    printf("\n");
 }
 
 //------------ menu functions ------------//
@@ -186,33 +219,56 @@ void removeStudent(){
         return;
     }
 
-    Student* stud = school.DB[level][class];
-    Student* prev = NULL;
-
-
-    while(stud != NULL && (strcmp(stud->fname, fname) != 0 && strcmp(stud->lname, lname) != 0)){
-        prev = stud;
-        stud = (Student *) stud->next;
-    }
+    Student* stud = searchInClass(school.DB[level][class], fname, lname);
 
     if(stud == NULL){
         printf("Student not found\n");
-        return;
     }
-
-    if(prev == NULL){
-        school.DB[level][class] = (Student *) stud->next;
+    else{
+        freeStudent(stud);
     }
-    else {
-        prev->next = stud->next;
-    }
-    free(stud);
 }
 
+Student* searchStudent(){
+    // read student from user
+    char fname[NUM_LEN], lname[NUM_LEN];
+
+    printf("please enter student full-name: \n");
+    if(scanf("%s %s", fname, lname) != 2){
+        programFailed("Error reading student info\n");
+    }
+    clearStdin();
+
+    // search student in DB
+    for (int i = 0; i < NUM_LEVELS; i++) {
+        for (int j = 0; j < NUM_CLASSES; j++) {
+            Student* stud = searchInClass(school.DB[i][j], fname, lname);
+            if(stud != NULL){
+                printStudent(stud);
+                return stud;
+            }
+        }
+    }
+
+    printf("Student not found\n");
+    return NULL;
+}
+
+void updateStudent(){
+    Student* stud = searchStudent();
+
+    if(stud == NULL)
+        return;
+
+    addStudent();
+    freeStudent(stud);
+}
 
 void executeTask(const int task){
 
     switch(task){
+        case 0: //exit
+            return;
         case 1:
             addStudent();
             break;
@@ -220,10 +276,10 @@ void executeTask(const int task){
             removeStudent();
             break;
         case 3:
-            printf("Update student\n");
+            updateStudent();
             break;
         case 4:
-            printf("Search student by name\n");
+            searchStudent();
             break;
         case 5:
             printf("Search excellent students\n");
@@ -236,9 +292,6 @@ void executeTask(const int task){
             break;
         case 8:
             printDB();
-            break;
-        case 0:
-            printf("Exit\n");
             break;
         default:
             printf("Invalid task\n");
