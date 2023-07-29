@@ -3,3 +3,4 @@ main
 .idea
 main.dSYM
 *.cpp
+*.txt

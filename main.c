@@ -2,40 +2,50 @@
 #include <stdlib.h>
 #include <string.h>
 
+
+//--------------------------- defines ---------------------------//
 #define NUM_COURSES 10
 #define NUM_CLASSES 10
-#define NUM_LEVELS 7
+#define NUM_LEVELS 12
 #define NUM_LEN 15
 #define CELL_LEN 11
 #define STUDENTS_FILE "students.txt"
 #define OUTPUT_FILE "backupDB.txt"
+#define TOP_STUDENTS 10
 
 
-//------------ structs ------------//
-typedef struct {
+//--------------------------- structs ---------------------------//
+typedef struct Student Student;
+typedef struct School School;
+
+struct Student{
     char fname[NUM_LEN];
     char lname[NUM_LEN];
     char cellphone[CELL_LEN];
     int courses_grades[NUM_COURSES];
-    int level, class; // for now, not sure if it will stay
-    struct Student* next;
-    struct Student* prev;
-} Student;
+    int level, class;
+    double avg;
+    Student* next;
+    Student* prev;
+};
 
-typedef struct {
+struct School{
     Student* DB[NUM_LEVELS][NUM_CLASSES];
-} School;
+};
 
 
-//typedef struct { for now, not sure if it will stay
-//    int name;
-//    int grade;
-//} Course;
+const char* const courses_names[NUM_COURSES] = {
+        "Math","Physics","Chemistry","Biology","History",
+        "Literature","English","Arabic","Art","Music"
+};
 
-//------------ global variables ------------//
+
+
+//--------------------------- global variables ---------------------------//
 static School school;
 
-//------------ memory functions ------------//
+
+//--------------------------- memory functions ---------------------------//
 void freeSchool(){
     int i, j;
     for (i = 0; i < NUM_LEVELS; i++) {
@@ -51,28 +61,27 @@ void freeSchool(){
 }
 
 void freeStudent(Student* stud){
+    if(stud == NULL) return;        // no student
+
     int class = stud->class, level = stud->level;
 
-    if(stud == NULL){
-        return;
+    if(stud->prev == NULL){         // first student in class
+        school.DB[level][class] = stud->next;
     }
-    if(stud->prev == NULL){ // first student in class
-        school.DB[level][class] = (Student *) stud->next;
+    else if(stud->next == NULL){    // last student in class
+        (stud->prev)->next = NULL;
     }
-    if(stud->next == NULL){ // last student in class
-        ((Student*) stud->prev)->next = NULL;
-    }
-    else {                 // not first student in class
-        ((Student*) stud->prev)->next = stud->next;
-        ((Student*) stud->next)->prev = stud->prev;
+    else {                          // student in the middle
+        (stud->prev)->next = stud->next;
+        (stud->next)->prev = stud->prev;
     }
     free(stud);
 }
 
-void programFailed(char* msg){
+void programFailed(const char* msg){
     perror(msg);
     freeSchool();
-    exit(-1);
+    exit(EXIT_FAILURE);
 }
 
 Student* allocateStudent(){
@@ -84,58 +93,114 @@ Student* allocateStudent(){
     return stud;
 }
 
-FILE* fileopen(const char* filename){
 
+//--------------------------- utility functions ---------------------------//
+void checkRangeInput(const int var, const int max){
+    if(var < 0 || var >= max){
+        char message[100];
+        sprintf(message, "Invalid input %d is not in the valid range {1, %d}", var, max);
+        programFailed(message);
+    }
+}
+
+FILE* fileopen(const char* filename, const char* mode){
     FILE* fp;
-    fp = fopen(filename, "r");
+    fp = fopen(filename, mode);
     if(fp == NULL){
-        perror("Can not open input file\n");
-        exit(-1);
+        programFailed("Error opening file\n");
     }
     return fp;
 }
 
 void clearStdin(){
-    while ((getchar()) != '\n'); // clear stdin
+    while ((getchar()) != '\n');
 }
 
-Student* searchInClass(Student* class, const char fname[NUM_LEN], const char lname[NUM_LEN]){
-    Student* stud = class;
-    while(stud != NULL && (strcmp(stud->fname, fname) != 0 || strcmp(stud->lname, lname) != 0)){
-        stud = (Student *) stud->next;
+void printStudent(const Student* stud){
+    printf("Student info:\n");
+    printf("First name: %s\n", stud->fname);
+    printf("Last name: %s\n", stud->lname);
+    printf("Cellphone: %s\n", stud->cellphone);
+    printf("Level: %d\n", stud->level+1);
+    printf("Class: %d\n", stud->class+1);
+    printf("Courses grades: ");
+    for(int i = 0; i < NUM_COURSES; i++){
+        printf("%d ", stud->courses_grades[i]);
     }
-    return stud;
+    printf("\n");
 }
 
-//------------ DB functions ------------//
+void printCourses(){
+    printf("Courses:\n");
+    for(int i = 0; i < NUM_COURSES; i++){
+        printf("%d. %s ", i + 1, courses_names[i]);
+    }
+    printf("\n");
+}
+
+int readValFromUser(const char* type, const int maxVal){
+    int val;
+    printf("please enter %s: \n", type);
+
+    if(scanf("%d", &val) != 1){
+        programFailed("Error reading student info\n");
+    }
+
+    val--;
+    checkRangeInput(val, maxVal);
+
+    clearStdin();
+    return val;
+}
+
+double calcStudAvg(const Student* stud){
+    double sum = 0;
+    for(int i = 0; i < NUM_COURSES; i++){
+        sum += stud->courses_grades[i];
+    }
+    if(NUM_COURSES == 0) return 0;
+    return sum / NUM_COURSES;
+}
+
+
+//--------------------------- DB functions -------------------------------//
 void parseStudentFromFileLine(char* line){
     int offset = 0;
-
     Student* stud = allocateStudent();
+
+    //read student info - fname, lname, cellphone, level, class
     int scannedItemsNum = sscanf(line, "%s %s %s %d %d%n", stud->fname, stud->lname, stud->cellphone, &stud->level, &stud->class, &offset);
     if(scannedItemsNum != 5){
         programFailed("Error reading student info\n");
     }
 
+    stud->level--;
+    stud->class--;
+    checkRangeInput(stud->level, NUM_LEVELS);
+    checkRangeInput(stud->class, NUM_CLASSES);
+
+    //read courses grades
     for(int i = 0, n = 0; i < NUM_COURSES; i++){
         scannedItemsNum = sscanf(line + offset, "%d%n", &stud->courses_grades[i], &n);
         if(scannedItemsNum != 1) {
-            programFailed("Error reading grade for course %d\n");
+            programFailed("Error reading grade - grade was not found as expected");
         }
         offset += n;
     }
 
-    //TODO: implement sorting insertion  by names
+    stud->avg = calcStudAvg(stud);
+
+    //add student to DB (at the head of the list)
     Student * currHead = school.DB[stud->level][stud->class];
-    stud->next = (struct Student *) currHead;
+    stud->next = currHead;
     if(currHead != NULL){
-        currHead->prev = (struct Student *) stud;
+        currHead->prev = stud;
     }
     school.DB[stud->level][stud->class] = stud;
 }
 
 void initDB(){
-    FILE* fp = fileopen(STUDENTS_FILE);
+    FILE* fp = fileopen(STUDENTS_FILE, "r");
 
     char *line = NULL;
     size_t len = 0;
@@ -149,13 +214,10 @@ void initDB(){
 }
 
 void printDB(FILE* fp){
-    if(fp == NULL){
-        fp = stdout;
-    }
 
     for(int i = 0; i < NUM_LEVELS; i++){
         for(int j = 0; j < NUM_CLASSES; j++){
-            fprintf(fp, "Level %d, Class %d:\n", i, j);
+            fprintf(fp, "Level %d, Class %d:\n", i+1, j+1);
             Student* curr = (Student *) school.DB[i][j];
             while(curr != NULL){
                 fprintf(fp, "%s %s %s ", curr->fname, curr->lname, curr->cellphone);
@@ -169,30 +231,25 @@ void printDB(FILE* fp){
     }
 }
 
-void printStudent(const Student* stud){
-    printf("Student info:\n");
-    printf("First name: %s\n", stud->fname);
-    printf("Last name: %s\n", stud->lname);
-    printf("Cellphone: %s\n", stud->cellphone);
-    printf("Level: %d\n", stud->level);
-    printf("Class: %d\n", stud->class);
-    printf("Courses grades: ");
-    for(int i = 0; i < NUM_COURSES; i++){
-        printf("%d ", stud->courses_grades[i]);
-    }
-    printf("\n");
-}
-
 void printDBtoFile(){
-    FILE *fp = fopen(OUTPUT_FILE, "w");
-    if(fp == NULL){
-        programFailed("Error opening output file\n");
-    }
+    FILE *fp = fileopen(OUTPUT_FILE, "w");
     printDB(fp);
     fclose(fp);
 }
 
-//------------ menu functions ------------//
+Student* searchInClass(Student* class, const char fname[NUM_LEN], const char lname[NUM_LEN]){
+    Student* stud = class;
+    while (stud != NULL) {
+        if(strcmp(stud->fname, fname) == 0 && strcmp(stud->lname, lname) == 0){
+            return stud;
+        }
+        stud = (Student *) stud->next;
+    }
+    return stud;
+}
+
+
+//--------------------------- menu functions -----------------------------//
 void printMenu(){
     printf("Choose task:\n");
     printf("1. Add student\n");
@@ -204,6 +261,7 @@ void printMenu(){
     printf("7. Calculate level average\n");
     printf("8. Print DB to screen\n");
     printf("9. Print DB to file\n");
+    printf("10. clear DB\n");
     printf("0. Exit\n");
     printf("Your choice: ");
 }
@@ -222,30 +280,26 @@ void addStudent(){
 
 void removeStudent(){
     char fname[NUM_LEN], lname[NUM_LEN];
-    int level, class;
 
-    printf("please enter student full-name, level and class: \n");
-    if(scanf("%s %s %d %d", fname, lname, &level, &class) != 4){
+    printf("please enter student full-name: \n");
+    if(scanf("%s %s", fname, lname) != 2){
         programFailed("Error reading student info\n");
     }
     clearStdin();
-    if(level < 0 || level > NUM_LEVELS || class < 0 || class > NUM_CLASSES){
-        printf("Invalid level or class\n");
-        return;
-    }
+    int level = readValFromUser("level", NUM_LEVELS);
+    int class = readValFromUser("class", NUM_CLASSES);
 
     Student* stud = searchInClass(school.DB[level][class], fname, lname);
-
     if(stud == NULL){
         printf("Student not found\n");
     }
     else{
         freeStudent(stud);
+        printf("Student removed\n");
     }
 }
 
 Student* searchStudent(){
-    // read student from user
     char fname[NUM_LEN], lname[NUM_LEN];
 
     printf("please enter student full-name: \n");
@@ -279,8 +333,86 @@ void updateStudent(){
     freeStudent(stud);
 }
 
-void executeTask(const int task){
+void printTop10InLevel(const int level, Student* top[TOP_STUDENTS], const int course){
+    printf("Level %d:\n", level + 1);
 
+    for(int i = 0; i < TOP_STUDENTS; i++){
+        if(top[i] != NULL){
+            printf("%d. %s %s %d\n", i+15, top[i]->fname, top[i]->lname, top[i]->courses_grades[course]);
+        }
+    }
+}
+
+void findTop10InLevel(const int level, const int course){
+    Student* top[TOP_STUDENTS] = {NULL};
+
+    for(int class = 0; class < NUM_CLASSES; class++){
+        Student* curr = school.DB[level][class];
+        while(curr != NULL){
+            int grade = curr->courses_grades[course];
+            for(int i = 0; i < TOP_STUDENTS; i++){
+                if(top[i] == NULL || top[i]->courses_grades[course] < grade){
+                    Student* temp = top[i];
+                    top[i] = curr;
+                    curr = temp;
+                }
+            }
+        }
+    }
+    printTop10InLevel(level, top, course);
+}
+
+void findTop10ExcellentStudents(){
+    printCourses();
+    int course = readValFromUser("course", NUM_COURSES);
+
+    for(int i = 0; i < NUM_LEVELS; i++){
+        findTop10InLevel(i, course);
+    }
+}
+
+void calculateLevelAverage(){
+    int level = readValFromUser("level", NUM_LEVELS);
+    printCourses();
+    int course = readValFromUser("course id", NUM_COURSES);
+
+    int sum = 0, count = 0;
+    for (int i = 0; i < NUM_CLASSES; i++) {
+        Student* stud = (Student *) school.DB[level][i];
+        while(stud != NULL){
+            sum += stud->courses_grades[course];
+            count++;
+            stud = (Student *) stud->next;
+        }
+    }
+
+    if(count == 0){
+        printf("No students in level %d\n", level + 1);
+    }
+    else{
+        printf("Level %d, course: %s average: %.3f\n", level + 1, courses_names[course], (float)sum/(float)count);
+    }
+
+}
+
+void searchUnstableStudents(){
+    printf("Unstable students - students with average lower than 60: \n");
+
+    for(int level = 0; level < NUM_LEVELS; level++){
+        for(int class = 0; class < NUM_CLASSES; class++){
+            Student* stud = school.DB[level][class];
+            while(stud != NULL){
+                if(stud->avg < 60) {
+                    printf("Level %d, class %d name: %s %s, avg: %.2f\n",
+                           stud->level + 1, stud->class + 1, stud->fname, stud->lname, stud->avg);
+                }
+                stud = stud->next;
+            }
+        }
+    }
+}
+
+void executeTask(const int task){
     switch(task){
         case 0: //exit
             return;
@@ -297,19 +429,22 @@ void executeTask(const int task){
             searchStudent();
             break;
         case 5:
-            printf("Search excellent students\n");
+            findTop10ExcellentStudents();
             break;
         case 6:
-            printf("Search unstable students\n");
+            searchUnstableStudents();
             break;
         case 7:
-            printf("Calculate level average\n");
+            calculateLevelAverage();
             break;
         case 8:
-            printDB(NULL);
+            printDB(stdout);
             break;
         case 9:
             printDBtoFile();
+            break;
+        case 10:
+            freeSchool();
             break;
         default:
             printf("Invalid task\n");
@@ -332,11 +467,10 @@ void menu(){
     }while(task != 0);
 }
 
-
 int main(){
 
     initDB();
-  //  printDB(NULL);
+    //  printDB(stdout);
     menu();
     freeSchool();
 
